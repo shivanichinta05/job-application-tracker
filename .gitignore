@@ -1,0 +1,15 @@
+# Virtual Environment
+venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# Local SQLite database (auto-generated on startup)
+tracker.db
+
+# Environment variables
+.env
+
+# VS Code settings
+.vscode/

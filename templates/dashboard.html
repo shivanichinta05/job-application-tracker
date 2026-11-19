@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard | JobTrack Pro{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+    <div>
+        <h2 class="fw-bold mb-1">Dashboard Overview</h2>
+        <p class="text-secondary mb-0">Track your job search pipeline, analytics, and upcoming follow-ups.</p>
+    </div>
+    <a href="{{ url_for('applications') }}" class="btn btn-purple px-4 py-2">
+        <i class="bi bi-table me-1"></i> Manage Applications
+    </a>
+</div>
+
+<!-- KPI Metric Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="saas-card p-3 h-100">
+            <div class="text-secondary small fw-semibold text-uppercase">Total</div>
+            <div class="fs-2 fw-bold text-white mt-1">{{ stats.Total }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="saas-card p-3 h-100">
+            <div class="small fw-semibold text-uppercase" style="color: #60a5fa;">Applied</div>
+            <div class="fs-2 fw-bold text-white mt-1">{{ stats.Applied }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="saas-card p-3 h-100">
+            <div class="small fw-semibold text-uppercase" style="color: #fbbf24;">Assessment</div>
+            <div class="fs-2 fw-bold text-white mt-1">{{ stats.Assessment }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="saas-card p-3 h-100">
+            <div class="small fw-semibold text-uppercase" style="color: #c084fc;">Interview</div>
+            <div class="fs-2 fw-bold text-white mt-1">{{ stats.Interview }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="saas-card p-3 h-100">
+            <div class="small fw-semibold text-uppercase" style="color: #4ade80;">Offers</div>
+            <div class="fs-2 fw-bold text-white mt-1">{{ stats.Offer }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="saas-card p-3 h-100">
+            <div class="small fw-semibold text-uppercase" style="color: #f87171;">Rejected</div>
+            <div class="fs-2 fw-bold text-white mt-1">{{ stats.Rejected }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts & Follow-ups Row -->
+<div class="row g-4 mb-4">
+    <!-- Left: Charts -->
+    <div class="col-lg-7">
+        <div class="saas-card p-4 h-100">
+            <h5 class="fw-bold mb-3">
+                <i class="bi bi-pie-chart-fill text-purple me-2"></i>Application Pipeline
+            </h5>
+            {% if stats.Total > 0 %}
+            <div class="row align-items-center g-3">
+                <div class="col-md-6">
+                    <div style="position: relative; height: 240px;">
+                        <canvas id="statusDoughnutChart"></canvas>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div style="position: relative; height: 240px;">
+                        <canvas id="statusBarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="text-center py-5 text-secondary">
+                <i class="bi bi-bar-chart fs-1"></i>
+                <p class="mt-2 mb-0">Add job applications to see your analytics charts.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Right: Follow-up Management -->
+    <div class="col-lg-5">
+        <div class="saas-card p-4 h-100">
+            <h5 class="fw-bold mb-3">
+                <i class="bi bi-bell-fill text-purple me-2"></i>Follow-up Tracker
+            </h5>
+
+            <!-- Overdue Follow-ups -->
+            {% if overdue_followups %}
+            <div class="mb-3">
+                <div class="small fw-bold text-danger text-uppercase mb-2">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i> Overdue ({{ overdue_followups|length }})
+                </div>
+                <div class="d-flex flex-column gap-2">
+                    {% for app in overdue_followups %}
+                    <div class="p-2 px-3 rounded border border-danger bg-danger bg-opacity-10 d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-semibold text-white">{{ app.company }}</div>
+                            <div class="small text-secondary">{{ app.role }}</div>
+                        </div>
+                        <div class="text-end">
+                            <span class="badge bg-danger">{{ app.follow_up_date }}</span>
+                            <div class="small text-danger mt-1">Overdue</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Upcoming Follow-ups -->
+            <div>
+                <div class="small fw-bold text-info text-uppercase mb-2">
+                    <i class="bi bi-calendar-event me-1"></i> Upcoming ({{ upcoming_followups|length }})
+                </div>
+                {% if upcoming_followups %}
+                <div class="d-flex flex-column gap-2">
+                    {% for app in upcoming_followups %}
+                    <div class="p-2 px-3 rounded border border-secondary d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-semibold text-white">{{ app.company }}</div>
+                            <div class="small text-secondary">{{ app.role }}</div>
+                        </div>
+                        <div class="text-end">
+                            <span class="badge bg-secondary">{{ app.follow_up_date }}</span>
+                            <div class="small text-secondary mt-1">
+                                {% if app.follow_up_date == today_str %}Today{% else %}Scheduled{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-secondary small mb-0">No upcoming follow-ups scheduled.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Applications -->
+<div class="saas-card p-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0">
+            <i class="bi bi-clock-history text-purple me-2"></i>Recent Applications
+        </h5>
+        <a href="{{ url_for('applications') }}" class="text-purple text-decoration-none small fw-semibold">
+            View All <i class="bi bi-arrow-right"></i>
+        </a>
+    </div>
+
+    {% if recent_apps %}
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Company</th>
+                    <th>Role</th>
+                    <th>Date Applied</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for app in recent_apps %}
+                <tr>
+                    <td class="fw-semibold text-white">{{ app.company }}</td>
+                    <td>{{ app.role }}</td>
+                    <td class="text-secondary">{{ app.date_applied }}</td>
+                    <td>
+                        <span class="badge rounded-pill px-3 py-2 badge-{{ app.status.lower() }}">
+                            {{ app.status }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-secondary mb-0">No applications logged yet.</p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+    const statsData = {{ stats | tojson }};
+    const labels = ['Applied', 'Assessment', 'Interview', 'Offer', 'Rejected'];
+    const counts = [
+        statsData.Applied,
+        statsData.Assessment,
+        statsData.Interview,
+        statsData.Offer,
+        statsData.Rejected
+    ];
+    const colors = ['#3b82f6', '#f59e0b', '#a855f7', '#22c55e', '#ef4444'];
+
+    if (statsData.Total > 0) {
+        // 1. Doughnut Chart
+        new Chart(document.getElementById('statusDoughnutChart'), {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: counts,
+                    backgroundColor: colors,
+                    borderColor: '#131a2a',
+                    borderWidth: 3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { color: '#cbd5e1', boxWidth: 12, padding: 12 }
+                    }
+                }
+            }
+        });
+
+        // 2. Bar Chart
+        new Chart(document.getElementById('statusBarChart'), {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Applications',
+                    data: counts,
+                    backgroundColor: colors,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#94a3b8' },
+                        grid: { display: false }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: '#94a3b8', stepSize: 1 },
+                        grid: { color: 'rgba(148, 163, 184, 0.1)' }
+                    }
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}

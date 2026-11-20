@@ -1,21 +1,113 @@
 from datetime import date
+from functools import wraps
+import sqlite3
 from database import get_db_connection, init_db
-from flask import Flask, flash, redirect, render_template, request, url_for
+from flask import Flask, flash, redirect, render_template, request, session, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
 app.secret_key = "jobtrack-pro-secret-key"
 
-# Ensure the database table exists when the app starts
+# Ensure database tables exist when the app starts
 init_db()
 
 
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if "user_id" not in session:
+            flash("Please log in to access your tracker.", "warning")
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# --- AUTHENTICATION ROUTES ---
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+        confirm_password = request.form.get("confirm_password", "").strip()
+
+        if not username or not password:
+            flash("Username and password are required.", "danger")
+            return redirect(url_for("register"))
+
+        if password != confirm_password:
+            flash("Passwords do not match.", "danger")
+            return redirect(url_for("register"))
+
+        password_hash = generate_password_hash(password)
+        conn = get_db_connection()
+        try:
+            conn.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                (username, password_hash),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.close()
+            flash("That username is already taken. Please choose another.", "danger")
+            return redirect(url_for("register"))
+
+        conn.close()
+        flash("Account created! Please log in.", "success")
+        return redirect(url_for("login"))
+
+    return render_template("register.html")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+
+        conn = get_db_connection()
+        user = conn.execute(
+            "SELECT * FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        conn.close()
+
+        if user and check_password_hash(user["password_hash"], password):
+            session["user_id"] = user["id"]
+            session["username"] = user["username"]
+            flash(f"Welcome back, {user['username']}!", "success")
+            return redirect(url_for("dashboard"))
+
+        flash("Invalid username or password.", "danger")
+        return redirect(url_for("login"))
+
+    return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("You have been logged out.", "info")
+    return redirect(url_for("login"))
+
+
+# --- MAIN APPLICATION ROUTES ---
+
 @app.route("/")
+@login_required
 def dashboard():
+    user_id = session["user_id"]
     conn = get_db_connection()
 
-    # 1. Get counts grouped by status
+    # 1. Get counts grouped by status for this user
     rows = conn.execute(
-        "SELECT status, COUNT(*) as count FROM applications GROUP BY status"
+        "SELECT status, COUNT(*) as count FROM applications WHERE user_id = ? GROUP BY status",
+        (user_id,),
     ).fetchall()
 
     stats = {
@@ -39,11 +131,13 @@ def dashboard():
     follow_up_rows = conn.execute(
         """
         SELECT * FROM applications
-        WHERE follow_up_date IS NOT NULL
+        WHERE user_id = ?
+          AND follow_up_date IS NOT NULL
           AND TRIM(follow_up_date) != ''
           AND status NOT IN ('Rejected', 'Offer')
         ORDER BY follow_up_date ASC
-        """
+        """,
+        (user_id,),
     ).fetchall()
 
     overdue_followups = []
@@ -55,9 +149,10 @@ def dashboard():
         else:
             upcoming_followups.append(app_row)
 
-    # 3. Fetch 5 most recent applications
+    # 3. Fetch 5 most recent applications for this user
     recent_apps = conn.execute(
-        "SELECT * FROM applications ORDER BY date_applied DESC, id DESC LIMIT 5"
+        "SELECT * FROM applications WHERE user_id = ? ORDER BY date_applied DESC, id DESC LIMIT 5",
+        (user_id,),
     ).fetchall()
 
     conn.close()
@@ -73,12 +168,14 @@ def dashboard():
 
 
 @app.route("/applications")
+@login_required
 def applications():
+    user_id = session["user_id"]
     search_query = request.args.get("search", "").strip()
     status_filter = request.args.get("status", "").strip()
 
-    query = "SELECT * FROM applications WHERE 1=1"
-    params = []
+    query = "SELECT * FROM applications WHERE user_id = ?"
+    params = [user_id]
 
     if search_query:
         query += " AND (company LIKE ? OR role LIKE ?)"
@@ -104,7 +201,9 @@ def applications():
 
 
 @app.route("/add", methods=["POST"])
+@login_required
 def add_application():
+    user_id = session["user_id"]
     company = request.form.get("company", "").strip()
     role = request.form.get("role", "").strip()
     job_description = request.form.get("job_description", "").strip()
@@ -123,11 +222,12 @@ def add_application():
     conn.execute(
         """
         INSERT INTO applications (
-            company, role, job_description, job_link,
+            user_id, company, role, job_description, job_link,
             date_applied, status, location, follow_up_date, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
+            user_id,
             company,
             role,
             job_description,
@@ -147,7 +247,9 @@ def add_application():
 
 
 @app.route("/edit/<int:app_id>", methods=["POST"])
+@login_required
 def edit_application(app_id):
+    user_id = session["user_id"]
     company = request.form.get("company", "").strip()
     role = request.form.get("role", "").strip()
     job_description = request.form.get("job_description", "").strip()
@@ -168,7 +270,7 @@ def edit_application(app_id):
         UPDATE applications
         SET company = ?, role = ?, job_description = ?, job_link = ?,
             date_applied = ?, status = ?, location = ?, follow_up_date = ?, notes = ?
-        WHERE id = ?
+        WHERE id = ? AND user_id = ?
         """,
         (
             company,
@@ -181,6 +283,7 @@ def edit_application(app_id):
             follow_up_date,
             notes,
             app_id,
+            user_id,
         ),
     )
     conn.commit()
@@ -191,9 +294,13 @@ def edit_application(app_id):
 
 
 @app.route("/delete/<int:app_id>", methods=["POST"])
+@login_required
 def delete_application(app_id):
+    user_id = session["user_id"]
     conn = get_db_connection()
-    conn.execute("DELETE FROM applications WHERE id = ?", (app_id,))
+    conn.execute(
+        "DELETE FROM applications WHERE id = ? AND user_id = ?", (app_id, user_id)
+    )
     conn.commit()
     conn.close()
 
